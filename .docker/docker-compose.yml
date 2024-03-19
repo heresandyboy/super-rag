@@ -1,0 +1,61 @@
+version: "3.8"
+
+services:
+  super-rag:
+    container_name: super-rag
+    networks:
+      - superagent_network
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    command: poetry run gunicorn --bind :8080 --workers 2 --timeout 0 --worker-class uvicorn.workers.UvicornWorker --threads 8 main:app
+    ports:
+      - "8083:8080"
+    environment:
+      API_BASE_URL: ${API_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      COHERE_API_KEY: ${COHERE_API_KEY}
+      E2B_API_KEY: ${E2B_API_KEY}
+      E2B_SANDBOX_NAME: ${E2B_SANDBOX_NAME}
+      PINECONE_API_KEY: ${PINECONE_API_KEY}
+      PINECONE_HOST: ${PINECONE_HOST}
+      PINECONE_INDEX: ${PINECONE_INDEX}
+      UNSTRUCTURED_IO_SERVER_URL: "http://unstructured-api:8000"
+      UNSTRUCTURED_IO_API_KEY: ${UNSTRUCTURED_IO_API_KEY}
+    restart: unless-stopped
+    depends_on:
+      unstructured-api:
+        condition: service_healthy
+    # volumes:
+    #   - ./:/app # Mount the application directory to the container for development purposes
+
+  unstructured-api:
+    container_name: unstructured-api
+    networks:
+      - superagent_network
+    image: downloads.unstructured.io/unstructured-io/unstructured-api:${UNSTRUCTURED_API_VERSION}
+    ports:
+      - "8084:8000"
+    environment:
+      PORT: 8000
+      HOST: 0.0.0.0
+      UNSTRUCTURED_PARALLEL_MODE_ENABLED: false
+      # UNSTRUCTURED_PARALLEL_MODE_URL:
+      UNSTRUCTURED_PARALLEL_MODE_THREADS: 3
+      UNSTRUCTURED_PARALLEL_MODE_SPLIT_SIZE: 1
+      UNSTRUCTURED_PARALLEL_RETRY_ATTEMPTS: 2
+      UNSTRUCTURED_API_KEY: ${UNSTRUCTURED_IO_API_KEY}
+      UNSTRUCTURED_MEMORY_FREE_MINIMUM_MB: 2048
+      SCARF_NO_ANALYTICS: true
+      DO_NOT_TRACK: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  superagent_network:
+    external: true

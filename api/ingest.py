@@ -6,57 +6,70 @@ from fastapi import APIRouter
 
 from models.ingest import RequestPayload
 from service.embedding import EmbeddingService
-from service.ingest import handle_google_drive, handle_urls
+from service.ingest import handle_confluence, handle_google_drive, handle_urls
 from utils.summarise import SUMMARY_SUFFIX
+
+from utils.logger import logger
 
 router = APIRouter()
 
 
 @router.post("/ingest")
 async def ingest(payload: RequestPayload) -> Dict:
-    encoder = payload.document_processor.encoder.get_encoder()
-    embedding_service = EmbeddingService(
-        encoder=encoder,
-        index_name=payload.index_name,
-        vector_credentials=payload.vector_database,
-        dimensions=payload.document_processor.encoder.dimensions,
-    )
-    chunks = []
-    summary_documents = []
-    if payload.files:
-        chunks, summary_documents = await handle_urls(
-            embedding_service=embedding_service,
-            files=payload.files,
-            config=payload.document_processor,
+    try:
+        logger.info(f"Received payload: {payload}")
+        encoder = payload.document_processor.encoder.get_encoder()
+        embedding_service = EmbeddingService(
+            encoder=encoder,
+            index_name=payload.index_name,
+            vector_credentials=payload.vector_database,
+            dimensions=payload.document_processor.encoder.dimensions,
         )
+        chunks = []
+        summary_documents = []
+        if payload.files:
+            chunks, summary_documents = await handle_urls(
+                embedding_service=embedding_service,
+                files=payload.files,
+                config=payload.document_processor,
+            )
 
-    elif payload.google_drive:
-        chunks, summary_documents = await handle_google_drive(
-            embedding_service, payload.google_drive
-        )  # type: ignore TODO: Fix typing
+        elif payload.google_drive:
+            chunks, summary_documents = await handle_google_drive(
+                embedding_service, payload.google_drive
+            )  # type: ignore TODO: Fix typing
 
-    tasks = [
-        embedding_service.embed_and_upsert(
-            chunks=chunks, encoder=encoder, index_name=payload.index_name
-        ),
-    ]
+        elif payload.confluence:
+            logger.info('Has confluence payload')
+            chunks, summary_documents = await handle_confluence(
+                embedding_service, payload.confluence
+            )
 
-    if summary_documents and all(item is not None for item in summary_documents):
-        tasks.append(
+        tasks = [
             embedding_service.embed_and_upsert(
-                chunks=summary_documents,
-                encoder=encoder,
-                index_name=f"{payload.index_name}{SUMMARY_SUFFIX}",
-            )
-        )
+                chunks=chunks, encoder=encoder, index_name=payload.index_name
+            ),
+        ]
 
-    await asyncio.gather(*tasks)
-
-    if payload.webhook_url:
-        async with aiohttp.ClientSession() as session:
-            await session.post(
-                url=payload.webhook_url,
-                json={"index_name": payload.index_name, "status": "completed"},
+        if summary_documents and all(item is not None for item in summary_documents):
+            tasks.append(
+                embedding_service.embed_and_upsert(
+                    chunks=summary_documents,
+                    encoder=encoder,
+                    index_name=f"{payload.index_name}{SUMMARY_SUFFIX}",
+                )
             )
 
-    return {"success": True, "index_name": payload.index_name}
+        await asyncio.gather(*tasks)
+
+        if payload.webhook_url:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    url=payload.webhook_url,
+                    json={"index_name": payload.index_name, "status": "completed"},
+                )
+
+        return {"success": True, "index_name": payload.index_name}
+    except Exception as e:
+        logger.error(f"An error occurred during ingestion: {str(e)}")
+        return {"success": False, "error": str(e)}

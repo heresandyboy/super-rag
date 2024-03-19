@@ -4,6 +4,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 from semantic_router.encoders import BaseEncoder, CohereEncoder, OpenAIEncoder
 
+from models.confluence import Confluence
 from models.file import File
 from models.google_drive import GoogleDrive
 from models.vector_database import VectorDatabase
@@ -89,4 +90,5 @@ class RequestPayload(BaseModel):
     document_processor: DocumentProcessorConfig = DocumentProcessorConfig()
     files: Optional[List[File]] = None
     google_drive: Optional[GoogleDrive] = None
+    confluence: Optional[Confluence] = None
     webhook_url: Optional[str] = None

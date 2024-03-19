@@ -6,7 +6,7 @@ import colorlog
 class CustomFormatter(colorlog.ColoredFormatter):
     def __init__(self):
         super().__init__(
-            "%(log_color)s%(asctime)s %(levelname)s %(name)s %(message)s",
+            "%(log_color)s%(asctime)s - %(levelname)s - %(pathname)s:%(lineno)d:\n%(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
             log_colors={
                 "DEBUG": "cyan",
